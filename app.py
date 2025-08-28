@@ -19,7 +19,7 @@ def configure_locale():
         try:
             locale.setlocale(locale.LC_ALL, 'pt_BR')
         except locale.Error:
-            st.warning("Locale 'pt_BR' não pôde ser configurado.")
+            st.warning("Locale 'pt_BR' não pôde ser configurado. A formatação de moeda pode ser afetada.")
             locale.setlocale(locale.LC_ALL, '')
 configure_locale()
 
@@ -65,17 +65,6 @@ def set_theme():
         }
     </style>
     """, unsafe_allow_html=True)
-
-def parse_currency(value_str: str) -> float:
-    """Converte uma string de moeda formatada (ex: 'R$ 1.234,56') para float."""
-    if not isinstance(value_str, str) or not value_str:
-        return 0.0
-    try:
-        # Remove R$, espaços, e pontos de milhar, depois troca vírgula por ponto decimal
-        cleaned_value = re.sub(r'[R$\s\.]', '', value_str).replace(',', '.')
-        return float(cleaned_value)
-    except (ValueError, TypeError):
-        return 0.0
 
 def formatar_moeda(valor, simbolo=True):
     try:
@@ -190,6 +179,7 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
         st.error(f"Erro ao gerar cronograma: {str(e)}."); return []
 
 def gerar_pdf(cronograma, dados):
+    """Gera um arquivo PDF com os resultados da simulação."""
     try:
         pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 14)
         pdf.cell(200, 10, txt="Informações do Imóvel", ln=1, align='L'); pdf.set_font("Arial", size=12)
@@ -214,6 +204,7 @@ def gerar_pdf(cronograma, dados):
         st.error(f"Erro ao gerar PDF: {str(e)}"); return BytesIO()
 
 def gerar_excel(cronograma, dados):
+    """Gera um arquivo Excel com os resultados da simulação."""
     try:
         install_and_import('openpyxl'); output = BytesIO()
         info_df = pd.DataFrame({'Campo': ['Quadra', 'Lote', 'Metragem', 'Valor Total do Imóvel', 'Entrada', 'Valor Financiado', 'Taxa Mensal Utilizada'], 'Valor': [dados.get('quadra', 'N/I'), dados.get('lote', 'N/I'), f"{dados.get('metragem', 'N/I')} m²", formatar_moeda(dados.get('valor_total', 0)), formatar_moeda(dados.get('entrada', 0)), formatar_moeda(dados.get('valor_financiado', 0)), f"{dados.get('taxa_mensal', 0):.2f}%"]})
@@ -228,15 +219,25 @@ def gerar_excel(cronograma, dados):
     except Exception as e:
         st.error(f"Erro ao gerar Excel: {str(e)}"); return BytesIO()
     
+# --- 3. APLICAÇÃO PRINCIPAL ---
 def main():
     set_theme()
     
+    # --- Inicialização do Estado da Sessão ---
+    if 'run_calculation' not in st.session_state: st.session_state.run_calculation = False
     if 'taxa_mensal' not in st.session_state: st.session_state.taxa_mensal = 0.89
     
-    def reset_form():
-        st.session_state.clear()
-        st.session_state.taxa_mensal = 0.89
+    def handle_calculate():
+        st.session_state.run_calculation = True
 
+    def handle_reset():
+        keys_to_clear = [k for k in st.session_state.keys() if k != 'taxa_mensal']
+        for key in keys_to_clear:
+            if key in st.session_state: del st.session_state[key]
+        st.session_state.taxa_mensal = 0.89
+        st.session_state.run_calculation = False
+
+    # --- Layout da Interface ---
     logo = load_logo()
     if logo:
         col1, col2 = st.columns([1, 4]); col1.image(logo, width=200); col2.title("**Bem-vindo ao Simulador da JMD HAMOA**")
@@ -247,50 +248,45 @@ def main():
     st.text_input("Lote", key="lote", placeholder="Ex: 22")
     st.text_input("Metragem (m²)", key="metragem", placeholder="Ex: 360")
 
-    with st.form("simulador_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            valor_total_str = st.text_input("Valor Total do Imóvel (R$)", key="valor_total_str", placeholder="Ex: 150.000,50")
-            entrada_str = st.text_input("Entrada (R$)", key="entrada_str", placeholder="Ex: 20.000,00")
-            data_input = st.date_input("Data de Entrada", value=datetime.now(), format="DD/MM/YYYY", key="data_input")
-            taxa_mensal = st.number_input("Taxa de Juros Mensal (%)", value=st.session_state.taxa_mensal, step=0.01, format="%.2f", key="taxa_mensal_input", help="Use vírgula para decimais (ex: 0,79).")
-            modalidade = st.selectbox("Modalidade de Pagamento", ["mensal", "mensal + balão", "só balão anual", "só balão semestral"], key="modalidade")
-            
-        with col2:
-            qtd_parcelas = st.number_input("Quantidade de Parcelas", min_value=0, max_value=360, step=1, key="qtd_parcelas", placeholder="Ex: 180")
-            valor_parcela_str = st.text_input("Valor da Parcela (R$)", key="valor_parcela_str", placeholder="Deixe em branco para cálculo")
-            valor_balao_str = ""
-            
-            tipo_balao = "anual" if "anual" in modalidade else "semestral"
-            agendamento_baloes = "Padrão"
-            if modalidade == "mensal + balão":
-                tipo_balao = st.selectbox("Período Padrão do Balão:", ["anual", "semestral"], key="tipo_balao")
-                agendamento_baloes = st.selectbox("Agendamento dos Balões", ["Padrão", "A partir do 1º Vencimento", "Personalizado (Mês a Mês)"], key="agendamento_baloes")
-                max_p = st.session_state.get('qtd_parcelas', 360) or 1
-                if agendamento_baloes == "Personalizado (Mês a Mês)":
-                    st.multiselect("Selecione os meses dos balões:", options=list(range(1, max_p + 1)), key="meses_baloes")
-                elif agendamento_baloes == "A partir do 1º Vencimento":
-                    st.number_input("Mês de Vencimento do 1º Balão", min_value=1, max_value=max_p, value=12, step=1, key="mes_primeiro_balao")
-                
-                qtd_baloes_calculado = atualizar_baloes(modalidade, qtd_parcelas, tipo_balao)
-                if agendamento_baloes == "Personalizado (Mês a Mês)":
-                    qtd_baloes_calculado = len(st.session_state.get('meses_baloes', []))
-                st.write(f"Quantidade de Balões: **{qtd_baloes_calculado}**")
-                valor_balao_str = st.text_input("Valor do Balão (R$)", key="valor_balao_str", placeholder="Deixe em branco para cálculo")
-
-        submitted = st.form_submit_button("Calcular")
-        st.form_submit_button("Reiniciar", on_click=reset_form)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.number_input("Valor Total do Imóvel (R$)", value=None, min_value=0.0, max_value=999_999_999.99, step=1000.0, format="%.2f", key="valor_total", placeholder="Ex: 150000,50")
+        st.number_input("Entrada (R$)", value=None, min_value=0.0, max_value=999_999_999.99, step=1000.0, format="%.2f", key="entrada", placeholder="Ex: 20000,00")
+        st.date_input("Data de Entrada", value=datetime.now(), format="DD/MM/YYYY", key="data_input")
+        st.number_input("Taxa de Juros Mensal (%)", step=0.01, format="%.2f", key="taxa_mensal", help="Use vírgula para decimais (ex: 0,79).")
     
-    if submitted:
+    with col2:
+        st.number_input("Quantidade de Parcelas", value=None, min_value=0, max_value=360, step=1, key="qtd_parcelas", placeholder="Ex: 180")
+        st.number_input("Valor da Parcela (R$)", value=None, min_value=0.0, step=100.0, format="%.2f", key="valor_parcela", placeholder="Deixe em branco para cálculo")
+        modalidade = st.selectbox("Modalidade de Pagamento", ["mensal", "mensal + balão", "só balão anual", "só balão semestral"], key="modalidade")
+
+        if modalidade == "mensal + balão":
+            tipo_balao = st.selectbox("Período Padrão do Balão:", ["anual", "semestral"], key="tipo_balao")
+            agendamento_baloes = st.selectbox("Agendamento dos Balões", ["Padrão", "A partir do 1º Vencimento", "Personalizado (Mês a Mês)"], key="agendamento_baloes")
+            max_p = st.session_state.get('qtd_parcelas') or 1
+            if agendamento_baloes == "Personalizado (Mês a Mês)":
+                st.multiselect("Selecione os meses dos balões:", options=list(range(1, max_p + 1)), key="meses_baloes")
+            elif agendamento_baloes == "A partir do 1º Vencimento":
+                st.number_input("Mês de Vencimento do 1º Balão", min_value=1, max_value=max_p, value=12, step=1, key="mes_primeiro_balao")
+            st.number_input("Valor do Balão (R$)", value=None, min_value=0.0, step=1000.0, format="%.2f", key="valor_balao", placeholder="Deixe em branco para cálculo")
+
+    col_b1, col_b2, _ = st.columns([1, 1, 5])
+    col_b1.button("Calcular", on_click=handle_calculate, type="primary")
+    col_b2.button("Reiniciar", on_click=handle_reset)
+
+    # --- Lógica de Cálculo e Exibição ---
+    if st.session_state.run_calculation:
         try:
-            st.session_state.taxa_mensal = taxa_mensal
-            valor_total = parse_currency(valor_total_str)
-            entrada = parse_currency(entrada_str)
-            valor_parcela = parse_currency(valor_parcela_str)
-            valor_balao = parse_currency(valor_balao_str)
+            valor_total = st.session_state.get('valor_total') or 0.0
+            entrada = st.session_state.get('entrada') or 0.0
+            qtd_parcelas = st.session_state.get('qtd_parcelas') or 0
+            valor_parcela = st.session_state.get('valor_parcela') or 0.0
+            valor_balao = st.session_state.get('valor_balao') or 0.0
+            taxa_mensal = st.session_state.get('taxa_mensal') or 0.0
+            modalidade = st.session_state.get('modalidade')
+            data_input = st.session_state.get('data_input')
             
-            taxa_mensal_para_calculo = taxa_mensal if not (1 <= (qtd_parcelas or 0) <= 36 and modalidade == 'mensal') else 0.0
+            taxa_mensal_para_calculo = taxa_mensal if not (1 <= qtd_parcelas <= 36 and modalidade == 'mensal') else 0.0
             if valor_total <= 0 or entrada < 0 or valor_total <= entrada:
                 st.error("Verifique os valores de 'Total do Imóvel' e 'Entrada'."); return
             
@@ -299,6 +295,8 @@ def main():
             modo = determinar_modo_calculo(modalidade)
             data_entrada = datetime.combine(data_input, datetime.min.time())
 
+            tipo_balao = st.session_state.get('tipo_balao', 'anual') if modalidade == "mensal + balão" else ("anual" if "anual" in modalidade else "semestral")
+            agendamento_baloes = st.session_state.get('agendamento_baloes', "Padrão")
             meses_baloes = st.session_state.get('meses_baloes', [])
             mes_primeiro_balao = st.session_state.get('mes_primeiro_balao', 12)
             
@@ -307,8 +305,7 @@ def main():
                 qtd_baloes = len(meses_baloes)
             
             valor_parcela_final, valor_balao_final = 0.0, 0.0
-            
-            datas_p = [ajustar_data_vencimento(data_entrada, "mensal", i) for i in range(1, (qtd_parcelas or 0) + 1)]
+            datas_p = [ajustar_data_vencimento(data_entrada, "mensal", i) for i in range(1, qtd_parcelas + 1)] if qtd_parcelas > 0 else []
             datas_b = []
             if qtd_baloes > 0:
                 if modalidade in ["só balão anual", "só balão semestral"]:
@@ -337,7 +334,7 @@ def main():
                     valor_parcela_final = round(vp_restante / fator_vp_p, 2) if fator_vp_p > 0 else 0
                 else: st.error("No modo 'mensal + balão', preencha OU o valor da parcela OU o valor do balão."); return
 
-            cronograma = gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final, (qtd_parcelas or 0), qtd_baloes, modalidade, tipo_balao, data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao)
+            cronograma = gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final, qtd_parcelas, qtd_baloes, modalidade, tipo_balao, data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao)
             
             st.subheader("Resultados da Simulação")
             c1, c2, c3, c4 = st.columns(4)
@@ -352,7 +349,7 @@ def main():
             st.subheader("Cronograma de Pagamentos")
             if cronograma:
                 df_cronograma = pd.DataFrame([p for p in cronograma if p['Item'] != 'TOTAL'])
-                st.dataframe(df_cronograma.style.format({'Valor': 'R$ {:,.2f}', 'Valor_Presente': 'R$ {:,.2f}', 'Desconto_Aplicado': 'R$ {:,.2f}'}), use_container_width=True, hide_index=True)
+                st.dataframe(df_cronograma.style.format({'Valor': 'R$ {:,.2f}', 'Valor_Presente': 'R$ {:,.2f}', 'Desconto_Aplicado': 'R$ {:,.2f}'}, na_rep='-'), use_container_width=True, hide_index=True)
                 total = cronograma[-1]
                 c1_res, c2_res, c3_res = st.columns(3)
                 c1_res.metric("Valor Total a Pagar", formatar_moeda(total['Valor'])); c2_res.metric("Valor Presente Total", formatar_moeda(total['Valor_Presente'])); c3_res.metric("Total de Descontos", formatar_moeda(total['Desconto_Aplicado']))
