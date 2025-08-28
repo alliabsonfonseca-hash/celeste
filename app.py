@@ -44,6 +44,9 @@ def install_and_import(package, import_name=None):
 pd = install_and_import('pandas')
 FPDF = install_and_import('fpdf2', 'fpdf').FPDF
 
+# --- Configuração da Página Streamlit e Tema ---
+st.set_page_config(layout="wide")
+
 # --- 2. FUNÇÕES DE CÁLCULO E UTILITÁRIOS ---
 @st.cache_data(ttl=86400)
 def load_logo():
@@ -316,7 +319,6 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
         parcelas = []
         baloes = []
 
-        # 1. Gera todas as parcelas
         if modalidade in ["mensal", "mensal + balão"]:
             for i in range(1, qtd_parcelas + 1):
                 data_vencimento = ajustar_data_vencimento(data_entrada, "mensal", i, dia_vencimento)
@@ -324,7 +326,6 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
                 vp = calcular_valor_presente(valor_parcela_final, taxas['diaria'], dias)
                 parcelas.append({"Item": f"Parcela {i}", "Tipo": "Parcela", "Data_Vencimento": data_vencimento.strftime('%d/%m/%Y'), "Dias": dias, "Valor": round(valor_parcela_final, 2), "Valor_Presente": round(vp, 2), "Desconto_Aplicado": round(valor_parcela_final - vp, 2)})
         
-        # 2. Gera todas as datas de balões
         datas_baloes_a_gerar = []
         periodo_map = {"só balão anual": "anual", "só balão semestral": "semestral"}
         if modalidade in periodo_map:
@@ -339,18 +340,15 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
             else:
                 intervalo = 12 if tipo_balao == "anual" else 6
                 datas_baloes_a_gerar = [ajustar_data_vencimento(data_entrada, "mensal", i * intervalo, dia_vencimento) for i in range(1, qtd_baloes + 1)]
-        
-        # 3. Processa os balões com base nas datas geradas
+
         for i, data_vencimento in enumerate(datas_baloes_a_gerar):
             balao_count = i + 1
             dias = (data_vencimento - data_entrada).days
             vp = calcular_valor_presente(valor_balao_final, taxas['diaria'], dias)
             baloes.append({"Item": f"Balão {balao_count}", "Tipo": "Balão", "Data_Vencimento": data_vencimento.strftime('%d/%m/%Y'), "Dias": dias, "Valor": round(valor_balao_final, 2), "Valor_Presente": round(vp, 2), "Desconto_Aplicado": round(valor_balao_final - vp, 2)})
         
-        # 4. Junta as listas: parcelas primeiro, depois balões
         cronograma = parcelas + baloes
         
-        # 5. Ajuste de precisão
         if cronograma:
             total_vp_calculado = sum(p['Valor_Presente'] for p in cronograma)
             diferenca = round(valor_financiado - total_vp_calculado, 2)
@@ -368,7 +366,6 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
         st.error(f"Erro ao gerar cronograma: {str(e)}."); return []
 
 def gerar_pdf(cronograma, dados):
-    # (Função completa e inalterada)
     try:
         pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 14)
         pdf.cell(200, 10, txt="Informações do Imóvel", ln=1, align='L'); pdf.set_font("Arial", size=12)
@@ -410,7 +407,6 @@ def gerar_excel(cronograma, dados):
 def main():
     set_theme()
     
-    # --- Inicialização do Estado da Sessão ---
     if 'taxa_mensal' not in st.session_state: st.session_state.taxa_mensal = 0.89
     
     def reset_form():
@@ -428,7 +424,9 @@ def main():
     st.text_input("Metragem (m²)", key="metragem", placeholder="Ex: 360")
 
     with st.form("simulador_form"):
+        # --- Layout de Colunas ---
         col1, col2 = st.columns(2)
+        
         with col1:
             valor_total_str = st.text_input("Valor Total do Imóvel (R$)", key="valor_total_str", placeholder="Ex: 150.000,50")
             entrada_str = st.text_input("Entrada (R$)", key="entrada_str", placeholder="Ex: 20.000,00")
@@ -518,22 +516,26 @@ def main():
             cronograma = gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final, (qtd_parcelas or 0), qtd_baloes, modalidade, tipo_balao, data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao)
             
             st.subheader("Resultados da Simulação")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Valor Financiado", formatar_moeda(valor_financiado))
-            c2.metric("Taxa Mensal Utilizada", f"{taxa_mensal_para_calculo:.2f}%")
             if cronograma and len(cronograma) > 1:
                 primeira_parcela = next((p for p in cronograma if p['Tipo'] == 'Parcela'), None)
                 primeiro_balao = next((p for p in cronograma if p['Tipo'] == 'Balão'), None)
+                
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Valor Financiado", formatar_moeda(valor_financiado))
+                c2.metric("Taxa Mensal Utilizada", f"{taxa_mensal_para_calculo:.2f}%")
                 if primeira_parcela: c3.metric("Valor da Parcela", formatar_moeda(primeira_parcela['Valor']))
                 if primeiro_balao: c4.metric("Valor do Balão", formatar_moeda(primeiro_balao['Valor']))
 
-            st.subheader("Cronograma de Pagamentos")
-            if cronograma:
+                st.subheader("Cronograma de Pagamentos")
                 df_cronograma = pd.DataFrame([p for p in cronograma if p['Item'] != 'TOTAL'])
                 st.dataframe(df_cronograma.style.format({'Valor': 'R$ {:,.2f}', 'Valor_Presente': 'R$ {:,.2f}', 'Desconto_Aplicado': 'R$ {:,.2f}'}), use_container_width=True, hide_index=True)
+                
                 total = cronograma[-1]
+                st.subheader("") # Espaçamento
                 c1_res, c2_res, c3_res = st.columns(3)
-                c1_res.metric("Valor Total a Pagar", formatar_moeda(total['Valor'])); c2_res.metric("Valor Presente Total", formatar_moeda(total['Valor_Presente'])); c3_res.metric("Total de Descontos", formatar_moeda(total['Desconto_Aplicado']))
+                c1_res.metric("Valor Total a Pagar", formatar_moeda(total['Valor']))
+                c2_res.metric("Valor Presente Total", formatar_moeda(total['Valor_Presente']))
+                c3_res.metric("Total de Descontos", formatar_moeda(total['Desconto_Aplicado']))
                 
                 st.subheader("Exportar Resultados")
                 export_data = {'valor_total': valor_total, 'entrada': entrada, 'taxa_mensal': taxa_mensal_para_calculo, 'valor_financiado': valor_financiado, 'quadra': st.session_state.quadra, 'lote': st.session_state.lote, 'metragem': st.session_state.metragem}
