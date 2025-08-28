@@ -1,3 +1,4 @@
+import streamlit as st
 from datetime import datetime, timedelta
 from PIL import Image
 import locale
