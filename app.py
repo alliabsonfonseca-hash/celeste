@@ -9,27 +9,18 @@ import subprocess
 import sys
 import re
 
-# --- Configuração de Locale ---
+# --- 1. CONFIGURAÇÕES INICIAIS ---
+st.set_page_config(layout="wide")
+
 def configure_locale():
-    """
-    Configura o locale para português do Brasil, tentando várias opções
-    para garantir compatibilidade em diferentes ambientes.
-    """
     try:
         locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
     except locale.Error:
         try:
             locale.setlocale(locale.LC_ALL, 'pt_BR')
         except locale.Error:
-            try:
-                locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil.1252')
-            except locale.Error:
-                try:
-                    locale.setlocale(locale.LC_ALL, '')
-                except locale.Error:
-                    locale.setlocale(locale.LC_ALL, 'C.UTF-8')
-                    st.warning("Configuração de locale específica não disponível. Usando padrão internacional.")
-
+            st.warning("Locale 'pt_BR' não pôde ser configurado.")
+            locale.setlocale(locale.LC_ALL, '')
 configure_locale()
 
 def install_and_import(package, import_name=None):
@@ -44,9 +35,6 @@ def install_and_import(package, import_name=None):
 pd = install_and_import('pandas')
 FPDF = install_and_import('fpdf2', 'fpdf').FPDF
 
-# --- Configuração da Página Streamlit e Tema ---
-st.set_page_config(layout="wide")
-
 # --- 2. FUNÇÕES DE CÁLCULO E UTILITÁRIOS ---
 @st.cache_data(ttl=86400)
 def load_logo():
@@ -59,198 +47,24 @@ def load_logo():
         return None
 
 def set_theme():
-    """
-    Aplica estilos CSS personalizados para um tema escuro
-    e aprimora a aparência dos componentes do Streamlit.
-    Inclui estilos para botões com efeitos de hover e clique.
-    """
     st.markdown("""
     <style>
-        /* Fundo principal */
-        .stApp {
-            background-color: #1E1E1E;
+        .stApp { background-color: #1E1E1E; }
+        h1, h2, h3, h4, h5, h6 { color: #FFFFFF; }
+        .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stMultiselect label { color: #FFFFFF !important; }
+        .stTextInput input, .stNumberInput input, .stSelectbox select, .stDateInput div[data-baseweb="input"] > div { background-color: #333333; color: #FFFFFF !important; }
+        .stMetric { background-color: #252526; border-radius: 8px; padding: 15px; border-left: 4px solid #4D6BFE; }
+        .stMetric label { color: #A0A0A0 !important; }
+        .dataframe th { background-color: #4D6BFE !important; color: white !important; }
+        .stButton button, .stDownloadButton button {
+            background-color: #4D6BFE !important; color: white !important; border: none !important; border-radius: 12px !important;
+            padding: 10px 24px !important; font-weight: 600 !important; transition: all 0.3s ease !important;
         }
-        
-        /* Sidebar */
-        [data-testid="stSidebar"] {
-            background-color: #252526;
-        }
-        
-        /* Títulos */
-        h1, h2, h3, h4, h5, h6, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-            color: #FFFFFF;
-        }
-        
-        /* Texto geral */
-        .stMarkdown p, .stMarkdown li, .stText, .stNumberInput label, .stSelectbox label {
-            color: #E0E0E0;
-        }
-        
-        /* Inputs */
-        .stTextInput input, .stNumberInput input, .stSelectbox select {
-            background-color: #333333;
-            color: #FFFFFF;
-            border-color: #555555;
-        }
-        
-        /* Botões padrão (não os customizados abaixo) */
-        .stButton button {
-            background-color: #0056b3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-        }
-        
-        .stButton button:hover {
-            background-color: #003d82;
-        }
-        
-        /* Cards/metricas */
-        .stMetric {
-            background-color: #252526;
-            border-radius: 8px;
-            padding: 15px;
-            border-left: 4px solid #4D6BFE; /* Cor da borda alterada para combinar com os botões */
-        }
-        
-        .stMetric label {
-            color: #A0A0A0 !important;
-        }
-        
-        .stMetric div {
-            color: #FFFFFF !important;
-            font-size: 24px !important;
-        }
-        
-        /* Dataframe */
-        .dataframe {
-            background-color: #252526 !important;
-            color: #E0E0E0 !important;
-        }
-        
-        .dataframe th {
-            background-color: #4D6BFE !important; /* Cor do cabeçalho alterada */
-            color: white !important;
-        }
-        
-        .dataframe tr:nth-child(even) {
-            background-color: #333333 !important;
-        }
-        
-        .dataframe tr:hover {
-            background-color: #444444 !important;
-        }
-
-        /* ===== LAYOUT ===== */
-        /* Container principal */
-        .main .block-container {
-            padding: 2rem 1rem !important;
-        }
-
-        /* Colunas e alinhamento */
-        [data-testid="column"] {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: flex-start !important;
-            padding: 0 !important;
-        }
-
-        /* Espaçamento entre botões */
-        .stButton:first-of-type {
-            margin-right: 8px !important;
-        }
-
-        /* ===== FLICKERING FIX ===== */
-        [data-testid="stDataFrame-container"] {
-            will-change: transform !important;
-            contain: strict !important;
-            min-height: 400px !important;
-            transform: translate3d(0, 0, 0) !important;
-            backface-visibility: hidden !important;
-            perspective: 1000px !important;
-        }
-
-        .stDataFrame-fullscreen {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
-            z-index: 9999 !important;
-            background-color: #0E1117 !important;
-            padding: 2rem !important;
-            overflow: auto !important;
-        }
-
-        /* Títulos específicos para cor branca */
-        h1, h2, h3, h4, h5, h6, 
-        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
-        /* Textos de input/labels */
-        .stTextInput label, .stNumberInput label, 
-        .stSelectbox label, .stDateInput label,
-        /* Subtítulos das seções */
-        .stSubheader,
-        /* Botões de exportação (labels) */
-        .stDownloadButton label {
-            color: #FFFFFF !important;
-        }
-        
-        /* Labels específicos que não são capturados pelas regras acima */
-        div[data-testid="stForm"] label,
-        div[data-testid="stVerticalBlock"] > div > div > div > div > label {
-            color: #FFFFFF !important;
-        }
-
-        /* BOTÕES PRINCIPAIS - ESTADO NORMAL (Calcular/Reiniciar/Exportar) */
-        div[data-testid="stForm"] button[kind="secondaryFormSubmit"],
-        div[data-testid="stForm"] button[kind="secondary"],
-        .stDownloadButton button {
-            background-color: #4D6BFE !important; /* Azul vibrante */
-            color: white !important;
-            border: none !important;
-            border-radius: 12px !important; /* Bordas super arredondadas */
-            padding: 10px 24px !important;
-            font-weight: 600 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        }
-
-        /* EFEITO HOVER - VERMELHO INTENSO */
-        div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:hover,
-        div[data-testid="stForm"] button[kind="secondary"]:hover,
-        .stDownloadButton button:hover {
-            background-color: #FF4D4D !important; /* Vermelho vibrante */
-            transform: translateY(-2px) !important;
-            box-shadow: 0 4px 8px rgba(255, 77, 77, 0.2) !important;
-        }
-
-        /* EFEITO CLIQUE */
-        div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:active,
-        div[data-testid="stForm"] button[kind="secondary"]:active,
-        .stDownloadButton button:active {
-            transform: translateY(0) !important;
-            background-color: #E04444 !important; /* Vermelho mais escuro */
-        }
-
-        /* TEXTO DOS BOTÕES */
-        div[data-testid="stForm"] button > div > p,
-        .stDownloadButton button > div > p {
-            color: white !important;
-            font-size: 14px !important;
-            margin: 0 !important;
+        .stButton button:hover, .stDownloadButton button:hover {
+            background-color: #FF4D4D !important; transform: translateY(-2px) !important;
         }
     </style>
     """, unsafe_allow_html=True)
-    
-
-# --- Funções de Cálculo Financeiro ---
-
-def parse_currency(value_str: str) -> float:
-    if not isinstance(value_str, str) or not value_str: return 0.0
-    try:
-        cleaned_value = re.sub(r'[R$\s\.]', '', value_str).replace(',', '.')
-        return float(cleaned_value)
-    except (ValueError, TypeError): return 0.0
 
 def formatar_moeda(valor, simbolo=True):
     try:
@@ -316,8 +130,7 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
                       data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao):
     try:
         dia_vencimento = data_entrada.day
-        parcelas = []
-        baloes = []
+        parcelas, baloes = [], []
 
         if modalidade in ["mensal", "mensal + balão"]:
             for i in range(1, qtd_parcelas + 1):
@@ -424,36 +237,34 @@ def main():
     st.text_input("Metragem (m²)", key="metragem", placeholder="Ex: 360")
 
     with st.form("simulador_form"):
-        # --- Layout de Colunas ---
         col1, col2 = st.columns(2)
-        
         with col1:
-            valor_total_str = st.text_input("Valor Total do Imóvel (R$)", key="valor_total_str", placeholder="Ex: 150.000,50")
-            entrada_str = st.text_input("Entrada (R$)", key="entrada_str", placeholder="Ex: 20.000,00")
+            valor_total_str = st.text_input("Valor Total do Imóvel (R$)", key="valor_total_str", placeholder="Ex: 485.458,00")
+            entrada_str = st.text_input("Entrada (R$)", key="entrada_str", placeholder="Ex: 45.000,00")
             data_input = st.date_input("Data de Entrada", value=datetime.now(), format="DD/MM/YYYY", key="data_input")
             taxa_mensal = st.number_input("Taxa de Juros Mensal (%)", value=st.session_state.taxa_mensal, step=0.01, format="%.2f", key="taxa_mensal_input", help="Use vírgula para decimais (ex: 0,79).")
-            modalidade = st.selectbox("Modalidade de Pagamento", ["mensal", "mensal + balão", "só balão anual", "só balão semestral"], key="modalidade")
         
         with col2:
             qtd_parcelas = st.number_input("Quantidade de Parcelas", min_value=0, max_value=360, step=1, key="qtd_parcelas", placeholder="Ex: 180")
             valor_parcela_str = st.text_input("Valor da Parcela (R$)", key="valor_parcela_str", placeholder="Deixe em branco para cálculo")
+            modalidade = st.selectbox("Modalidade de Pagamento", ["mensal", "mensal + balão", "só balão anual", "só balão semestral"], key="modalidade")
             valor_balao_str = ""
-            
-            tipo_balao = st.session_state.get('tipo_balao', "anual")
-            agendamento_baloes = st.session_state.get('agendamento_baloes', "Padrão")
+            if "balão" in modalidade:
+                valor_balao_str = st.text_input("Valor do Balão (R$)", key="valor_balao_str", placeholder="Deixe em branco para cálculo")
 
-            if modalidade == "mensal + balão":
+        if st.session_state.get("modalidade") == "mensal + balão":
+            st.subheader("Configuração dos Balões")
+            b_col1, b_col2 = st.columns(2)
+            with b_col1:
                 tipo_balao = st.selectbox("Período Padrão do Balão:", ["anual", "semestral"], key="tipo_balao")
                 agendamento_baloes = st.selectbox("Agendamento dos Balões", ["Padrão", "A partir do 1º Vencimento", "Personalizado (Mês a Mês)"], key="agendamento_baloes")
-                max_p = qtd_parcelas or 1
-                if agendamento_baloes == "Personalizado (Mês a Mês)":
+            with b_col2:
+                if st.session_state.get('agendamento_baloes') == "Personalizado (Mês a Mês)":
+                    max_p = st.session_state.get('qtd_parcelas') or 1
                     st.multiselect("Selecione os meses dos balões:", options=list(range(1, max_p + 1)), key="meses_baloes")
-                elif agendamento_baloes == "A partir do 1º Vencimento":
+                elif st.session_state.get('agendamento_baloes') == "A partir do 1º Vencimento":
+                    max_p = st.session_state.get('qtd_parcelas') or 1
                     st.number_input("Mês de Vencimento do 1º Balão", min_value=1, max_value=max_p, value=min(12, max_p), step=1, key="mes_primeiro_balao")
-                
-                qtd_baloes_calculado = atualizar_baloes(modalidade, qtd_parcelas, tipo_balao)
-                st.write(f"Quantidade de Balões: **{qtd_baloes_calculado}**")
-                valor_balao_str = st.text_input("Valor do Balão (R$)", key="valor_balao_str", placeholder="Deixe em branco para cálculo")
 
         submitted = st.form_submit_button("Calcular")
         st.form_submit_button("Reiniciar", on_click=reset_form)
@@ -465,8 +276,9 @@ def main():
             entrada = parse_currency(entrada_str)
             valor_parcela = parse_currency(valor_parcela_str)
             valor_balao = parse_currency(valor_balao_str)
+            qtd_parcelas_val = qtd_parcelas or 0
             
-            taxa_mensal_para_calculo = taxa_mensal if not (1 <= (qtd_parcelas or 0) <= 36 and modalidade == 'mensal') else 0.0
+            taxa_mensal_para_calculo = taxa_mensal if not (1 <= qtd_parcelas_val <= 36 and modalidade == 'mensal') else 0.0
             if valor_total <= 0 or entrada < 0 or valor_total <= entrada:
                 st.error("Verifique os valores de 'Total do Imóvel' e 'Entrada'."); return
             
@@ -475,6 +287,8 @@ def main():
             modo = determinar_modo_calculo(modalidade)
             data_entrada = datetime.combine(data_input, datetime.min.time())
 
+            tipo_balao = st.session_state.get('tipo_balao', 'anual') if modalidade == "mensal + balão" else ("anual" if "anual" in modalidade else "semestral")
+            agendamento_baloes = st.session_state.get('agendamento_baloes', "Padrão")
             meses_baloes = st.session_state.get('meses_baloes', [])
             mes_primeiro_balao = st.session_state.get('mes_primeiro_balao', 12)
             
@@ -484,7 +298,7 @@ def main():
             
             valor_parcela_final, valor_balao_final = 0.0, 0.0
             
-            datas_p = [ajustar_data_vencimento(data_entrada, "mensal", i) for i in range(1, (qtd_parcelas or 0) + 1)]
+            datas_p = [ajustar_data_vencimento(data_entrada, "mensal", i) for i in range(1, qtd_parcelas_val + 1)]
             datas_b = []
             if qtd_baloes > 0:
                 if modalidade in ["só balão anual", "só balão semestral"]:
@@ -513,7 +327,7 @@ def main():
                     valor_parcela_final = round(vp_restante / fator_vp_p, 2) if fator_vp_p > 0 else 0
                 else: st.error("No modo 'mensal + balão', preencha OU o valor da parcela OU o valor do balão."); return
 
-            cronograma = gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final, (qtd_parcelas or 0), qtd_baloes, modalidade, tipo_balao, data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao)
+            cronograma = gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final, qtd_parcelas_val, qtd_baloes, modalidade, tipo_balao, data_entrada, taxas, agendamento_baloes, meses_baloes, mes_primeiro_balao)
             
             st.subheader("Resultados da Simulação")
             if cronograma and len(cronograma) > 1:
@@ -531,11 +345,9 @@ def main():
                 st.dataframe(df_cronograma.style.format({'Valor': 'R$ {:,.2f}', 'Valor_Presente': 'R$ {:,.2f}', 'Desconto_Aplicado': 'R$ {:,.2f}'}), use_container_width=True, hide_index=True)
                 
                 total = cronograma[-1]
-                st.subheader("") # Espaçamento
+                st.subheader("")
                 c1_res, c2_res, c3_res = st.columns(3)
-                c1_res.metric("Valor Total a Pagar", formatar_moeda(total['Valor']))
-                c2_res.metric("Valor Presente Total", formatar_moeda(total['Valor_Presente']))
-                c3_res.metric("Total de Descontos", formatar_moeda(total['Desconto_Aplicado']))
+                c1_res.metric("Valor Total a Pagar", formatar_moeda(total['Valor'])); c2_res.metric("Valor Presente Total", formatar_moeda(total['Valor_Presente'])); c3_res.metric("Total de Descontos", formatar_moeda(total['Desconto_Aplicado']))
                 
                 st.subheader("Exportar Resultados")
                 export_data = {'valor_total': valor_total, 'entrada': entrada, 'taxa_mensal': taxa_mensal_para_calculo, 'valor_financiado': valor_financiado, 'quadra': st.session_state.quadra, 'lote': st.session_state.lote, 'metragem': st.session_state.metragem}
