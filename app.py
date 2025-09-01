@@ -226,7 +226,7 @@ def set_theme():
         }
 
         /* EFEITO HOVER - VERMELHO INTENSO */
-        div[data_testid="stForm"] button[kind="secondaryFormSubmit"]:hover,
+        div[data-testid="stForm"] button[kind="secondaryFormSubmit"]:hover,
         div[data-testid="stForm"] button[kind="secondary"]:hover,
         .stDownloadButton button:hover {
             background-color: #FF4D4D !important; /* Vermelho vibrante */
@@ -327,17 +327,28 @@ def calcular_fator_vp(datas_vencimento, data_inicio, taxa_diaria):
 def ajustar_data_vencimento(data_base, periodo, num_periodo=1, dia_vencimento=None):
     try:
         if not isinstance(data_base, datetime): data_base = datetime.combine(data_base, datetime.min.time())
-        ano, mes, dia = data_base.year, data_base.month, data_base.day if dia_vencimento is not None else dia_vencimento
+        ano, mes = data_base.year, data_base.month
+        dia = dia_vencimento if dia_vencimento is not None else data_base.day
+        
         if periodo == "mensal":
-            total_meses = mes + num_periodo; ano += (total_meses - 1) // 12; mes = (total_meses - 1) % 12 + 1
+            total_meses = mes + num_periodo
+            ano += (total_meses - 1) // 12
+            mes = (total_meses - 1) % 12 + 1
         elif periodo == "semestral":
-            total_meses = mes + (6 * num_periodo); ano += (total_meses - 1) // 12; mes = (total_meses - 1) % 12 + 1
-        elif periodo == "anual": ano += num_periodo
-        try: return datetime(ano, mes, dia)
-        except ValueError:
-            ultimo_dia = (datetime(ano, mes % 12 + 1, 1) - timedelta(days=1)).day if mes < 12 else 31
-            return datetime(ano, mes, ultimo_dia)
-    except Exception: return data_base + timedelta(days=30 * num_periodo)
+            total_meses = mes + (6 * num_periodo)
+            ano += (total_meses - 1) // 12
+            mes = (total_meses - 1) % 12 + 1
+        elif periodo == "anual":
+            ano += num_periodo
+        
+        try:
+            return datetime(ano, mes, dia)
+        except ValueError: # Trata o caso de dias que não existem no mês (ex: 31 de Fev)
+            ultimo_dia_do_mes = (datetime(ano, mes % 12 + 1, 1) - timedelta(days=1)).day if mes < 12 else 31
+            return datetime(ano, mes, ultimo_dia_do_mes)
+    except Exception:
+        return data_base + timedelta(days=30 * num_periodo)
+
 
 def determinar_modo_calculo(modalidade):
     return {"mensal": 1, "mensal + balão": 2, "só balão anual": 3, "só balão semestral": 4}.get(modalidade, 1)
@@ -384,9 +395,22 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
             datas_baloes_a_gerar = []
             if agendamento_baloes == "Personalizado (Mês a Mês)":
                 datas_baloes_a_gerar = [ajustar_data_vencimento(data_entrada, "mensal", mes, dia_vencimento) for mes in meses_baloes]
+            
+            # AJUSTE INICIA AQUI
             elif agendamento_baloes == "A partir do 1º Vencimento":
-                data_base_balao = ajustar_data_vencimento(data_entrada, "mensal", mes_primeiro_balao, dia_vencimento)
-                datas_baloes_a_gerar = [ajustar_data_vencimento(data_base_balao, tipo_balao, i) for i in range(qtd_baloes)]
+                # Calcula a data do primeiro balão com base no mês selecionado pelo usuário
+                primeira_data_balao = ajustar_data_vencimento(data_entrada, "mensal", mes_primeiro_balao, dia_vencimento)
+                datas_baloes_a_gerar.append(primeira_data_balao) # Adiciona o primeiro balão
+                
+                # Itera para gerar os balões subsequentes
+                data_anterior = primeira_data_balao
+                for _ in range(1, qtd_baloes): # Começa de 1 porque o primeiro já foi adicionado
+                    # O próximo balão é calculado com base na data do balão ANTERIOR
+                    proxima_data_balao = ajustar_data_vencimento(data_anterior, tipo_balao, 1) # Sempre adiciona 1 período
+                    datas_baloes_a_gerar.append(proxima_data_balao)
+                    data_anterior = proxima_data_balao
+            # AJUSTE TERMINA AQUI
+
             else: # Padrão
                 intervalo = 12 if tipo_balao == "anual" else 6
                 datas_baloes_a_gerar = [ajustar_data_vencimento(data_entrada, "mensal", i * intervalo, dia_vencimento) for i in range(1, qtd_baloes + 1)]
@@ -398,7 +422,7 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
                 vp = calcular_valor_presente(valor_corrente, taxas['diaria'], dias)
                 baloes.append({"Item": f"Balão {balao_count}", "Tipo": "Balão", "Data_Vencimento": data_vencimento.strftime('%d/%m/%Y'), "Dias": dias, "Valor": round(valor_corrente, 2), "Valor_Presente": round(vp, 2), "Desconto_Aplicado": round(valor_corrente - vp, 2)})
         
-        cronograma = parcelas + baloes
+        cronograma = sorted(parcelas + baloes, key=lambda x: datetime.strptime(x['Data_Vencimento'], '%d/%m/%Y'))
         if cronograma:
             total_valor = round(sum(p['Valor'] for p in cronograma), 2)
             cronograma.append({"Item": "TOTAL", "Tipo": "", "Data_Vencimento": "", "Dias": "", "Valor": total_valor, "Valor_Presente": valor_financiado, "Desconto_Aplicado": round(total_valor - valor_financiado, 2)})
@@ -407,6 +431,7 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
     except Exception as e:
         st.error(f"Erro inesperado ao gerar cronograma: {str(e)}.")
         return []
+
 
 def gerar_pdf(cronograma, dados):
     try:
@@ -563,8 +588,13 @@ def main():
                     if agendamento_baloes == "Personalizado (Mês a Mês)":
                         datas_b = [ajustar_data_vencimento(data_entrada, "mensal", mes, dia_vencimento) for mes in meses_baloes]
                     elif agendamento_baloes == "A partir do 1º Vencimento":
-                        data_base_b = ajustar_data_vencimento(data_entrada, "mensal", mes_primeiro_balao, dia_vencimento)
-                        datas_b = [ajustar_data_vencimento(data_base_b, tipo_balao, i) for i in range(qtd_baloes)]
+                        primeira_data_b = ajustar_data_vencimento(data_entrada, "mensal", mes_primeiro_balao, dia_vencimento)
+                        datas_b = [primeira_data_b]
+                        data_anterior_b = primeira_data_b
+                        for _ in range(1, qtd_baloes):
+                            proxima_data_b = ajustar_data_vencimento(data_anterior_b, tipo_balao, 1)
+                            datas_b.append(proxima_data_b)
+                            data_anterior_b = proxima_data_b
                     else: # Padrão
                         intervalo_b = 12 if tipo_balao == 'anual' else 6
                         datas_b = [ajustar_data_vencimento(data_entrada, "mensal", i * intervalo_b, dia_vencimento) for i in range(1, qtd_baloes + 1)]
