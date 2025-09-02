@@ -291,7 +291,7 @@ def calcular_taxas(taxa_mensal_percentual):
         taxa_mensal_decimal = float(taxa_mensal_percentual) / 100
         taxa_anual = ((1 + taxa_mensal_decimal) ** 12) - 1
         taxa_semestral = ((1 + taxa_mensal_decimal) ** 6) - 1
-        taxa_diaria = ((1 + taxa_mensal_decimal) ** (1/30)) - 1 # <-- AJUSTE AQUI
+        taxa_diaria = ((1 + taxa_mensal_decimal) ** (1/30)) - 1
         
         return {
             'anual': taxa_anual, 'semestral': taxa_semestral,
@@ -443,8 +443,10 @@ def gerar_cronograma(valor_financiado, valor_parcela_final, valor_balao_final,
                       })
                       balao_count += 1
         
-        cronograma = sorted(parcelas + baloes, key=lambda x: datetime.strptime(x['Data_Vencimento'], '%d/%m/%Y'))
-
+        # CORREÇÃO 3: Ordena as listas separadamente e depois concatena
+        parcelas_sorted = sorted(parcelas, key=lambda x: datetime.strptime(x['Data_Vencimento'], '%d/%m/%Y'))
+        baloes_sorted = sorted(baloes, key=lambda x: datetime.strptime(x['Data_Vencimento'], '%d/%m/%Y'))
+        cronograma = parcelas_sorted + baloes_sorted
 
         if cronograma:
             total_valor = round(sum(p['Valor'] for p in cronograma), 2)
@@ -574,12 +576,10 @@ def main():
     else:
         st.title("Simulador Imobiliária Celeste")
         
-    # --- ALTERAÇÃO: Atualizado valor padrão para a nova taxa máxima ---
     if 'taxa_mensal' not in st.session_state: st.session_state.taxa_mensal = 0.79
     
     def reset_form():
         st.session_state.clear()
-        # --- ALTERAÇÃO: Atualizado valor padrão para a nova taxa máxima ---
         st.session_state.taxa_mensal = 0.79
 
     with st.container():
@@ -595,7 +595,6 @@ def main():
             valor_total = st.number_input("Valor Total do Imóvel (R$)", min_value=0.0, step=1000.0, format="%.2f", key="valor_total")
             entrada = st.number_input("Entrada (R$)", min_value=0.0, step=1000.0, format="%.2f", key="entrada")
             data_input = st.date_input("Data de Entrada", value=datetime.now(), format="DD/MM/YYYY", key="data_input")
-            # Este campo agora serve apenas como referência da taxa máxima
             taxa_mensal_exibicao = st.number_input("Taxa de Juros Mensal Máxima (%)", value=st.session_state.taxa_mensal, step=0.01, format="%.2f", disabled=True)
             modalidade = st.selectbox("Modalidade de Pagamento", ["mensal", "mensal + balão", "só balão anual", "só balão semestral"], key="modalidade")
             
@@ -627,15 +626,14 @@ def main():
     
     if submitted:
         try:
-            # --- ALTERAÇÃO PRINCIPAL: Lógica para seleção da taxa de juros com base nas novas faixas ---
             if 1 <= qtd_parcelas <= 36:
                 taxa_mensal_para_calculo = 0.0
             elif 37 <= qtd_parcelas <= 48:
                 taxa_mensal_para_calculo = 0.395
             elif 49 <= qtd_parcelas <= 180:
                 taxa_mensal_para_calculo = 0.79
-            else: # Para 0 parcelas ou acima de 180 (caso o usuário ignore o aviso)
-                taxa_mensal_para_calculo = 0.79 # Usa a taxa máxima como padrão
+            else: 
+                taxa_mensal_para_calculo = 0.79 
 
             if valor_total <= 0 or entrada < 0 or valor_total <= entrada:
                 st.error("Verifique os valores de 'Total do Imóvel' e 'Entrada'. O valor financiado deve ser maior que zero.")
@@ -648,7 +646,6 @@ def main():
             valor_parcela_final, valor_balao_final = 0.0, 0.0
             valor_primeira_parcela_ajustada, valor_primeiro_balao_ajustado = None, None
             
-            # Lógica de cálculo para planos sem juros (até 36 meses)
             if taxa_mensal_para_calculo == 0.0:
                 if modo == 1 and qtd_parcelas > 0:
                     valor_padrao = round(valor_financiado / qtd_parcelas, 2)
@@ -685,7 +682,6 @@ def main():
                         st.error("No modo 'mensal + balão', informe OU o valor da parcela OU o valor do balão para o cálculo, não ambos ou nenhum.")
                         return
             else:
-                # Lógica para planos com juros
                 data_entrada_dt = datetime.combine(data_input, datetime.min.time())
                 dia_vencimento = data_entrada_dt.day
                 if modo == 1 and qtd_parcelas > 0:
